@@ -11,7 +11,15 @@ def run_algorithm(name, objective, bounds, population_size=30, iterations=50, se
     if name not in ALGORITHMS:
         raise ValueError(f"Unsupported algorithm: {name}")
     started = time.perf_counter()
-    result = ALGORITHMS[name](objective, bounds, population_size, iterations, seed)
+    evaluations = 0
+
+    def counted_objective(vector):
+        nonlocal evaluations
+        evaluations += 1
+        return objective(vector)
+
+    result = ALGORITHMS[name](counted_objective, bounds, population_size, iterations, seed)
     result["elapsed_seconds"] = time.perf_counter() - started
     result["algorithm"] = name
+    result["objective_evaluations"] = evaluations
     return result

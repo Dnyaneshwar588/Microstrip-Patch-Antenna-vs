@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO
 import numpy as np
 import pandas as pd
+from .frequency_metadata import load_frequency_values, validate_frequency_values
 
 
 @dataclass
@@ -16,6 +16,7 @@ class DatasetBundle:
     frequency_columns: list[str]
     warnings: list[str]
     metadata: dict[str, object]
+    frequency_values_hz: np.ndarray | None = None
 
 
 def _read(source: str | Path | BinaryIO) -> pd.DataFrame:
@@ -37,6 +38,11 @@ def load_dataset(
     inputs: str | Path | BinaryIO,
     s11_real: str | Path | BinaryIO | None = None,
     s11_imag: str | Path | BinaryIO | None = None,
+    frequency_source: str | Path | BinaryIO | None = None,
+    frequency_start: float | None = None,
+    frequency_stop: float | None = None,
+    frequency_count: int | None = None,
+    frequency_unit: str = "GHz",
 ) -> DatasetBundle:
     """Load a single table or align input/complex S11 files by row index."""
     warnings: list[str] = []
@@ -52,6 +58,11 @@ def load_dataset(
         targets = [column for column in numeric if "s11" in str(column).lower()]
         features = [column for column in numeric if column not in targets]
         metadata["s11_points"] = len(targets)
+        frequencies = load_frequency_values(
+            frequency_source, start=frequency_start, stop=frequency_stop,
+            count=frequency_count, unit=frequency_unit,
+        )
+        validate_frequency_values(frequencies, len(targets))
         return DatasetBundle(
             input_frame,
             features or numeric,
@@ -59,6 +70,7 @@ def load_dataset(
             _frequency_columns(targets),
             warnings,
             metadata,
+            frequencies,
         )
     if s11_real is None or s11_imag is None:
         raise ValueError("Both S11 real and S11 imaginary files are required.")
@@ -93,13 +105,22 @@ def load_dataset(
             "cannot be derived until frequency metadata is provided."
         )
     result = pd.concat([input_frame, pd.DataFrame(output_columns)], axis=1)
+    frequencies = load_frequency_values(
+        frequency_source, start=frequency_start, stop=frequency_stop,
+        count=frequency_count, unit=frequency_unit,
+    )
+    validate_frequency_values(frequencies, count)
     metadata = _metadata(result, _numeric_columns(result), warnings)
     metadata.update({
         "input_rows": len(input_frame),
         "s11_points": count,
         "frequency_labels_verified": bool(_frequency_columns(real_num)),
     })
-    return DatasetBundle(result, _numeric_columns(input_frame), targets, _frequency_columns(real_num), warnings, metadata)
+    metadata["frequency_available"] = frequencies is not None
+    return DatasetBundle(
+        result, _numeric_columns(input_frame), targets, _frequency_columns(real_num),
+        warnings, metadata, frequencies,
+    )
 
 
 def _metadata(frame: pd.DataFrame, numeric_columns: list[str], warnings: list[str]) -> dict[str, object]:

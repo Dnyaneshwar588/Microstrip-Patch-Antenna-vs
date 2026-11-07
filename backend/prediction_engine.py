@@ -1,10 +1,20 @@
 from __future__ import annotations
 import numpy as np
+import pandas as pd
 
 
 def predict(model, values):
     prediction = np.asarray(model.predict([values])).ravel()
     return dict(zip(model.targets, prediction))
+
+
+def prediction_csv(model, values, frequencies=None) -> str:
+    prediction = predict(model, values)
+    frame = pd.DataFrame({
+        "frequency_hz": frequencies if frequencies is not None else range(len(prediction)),
+        "s11_db": list(prediction.values()),
+    })
+    return frame.to_csv(index=False)
 
 
 def range_warnings(values, training_frame):
