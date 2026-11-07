@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import math
 from pathlib import Path
 from typing import Annotated
 
@@ -107,6 +108,7 @@ def get_state():
             "inputColumns": bundle.input_columns,
             "targetColumns": bundle.target_columns,
             "warnings": bundle.warnings,
+            "metadata": bundle.metadata,
             "preview": _frame_payload(bundle.data),
         },
         "models": list(state["models"]),
@@ -157,6 +159,8 @@ def make_prediction(request: PredictRequest):
     if missing:
         raise HTTPException(400, f"Missing features: {', '.join(sorted(missing))}")
     values = {feature: request.values[feature] for feature in model.features}
+    if any(not math.isfinite(value) for value in values.values()):
+        raise HTTPException(400, "Prediction values must be finite numbers.")
     return {
         "warnings": range_warnings(values, state["prepared"].X_train),
         "prediction": predict(model, values),
@@ -172,18 +176,25 @@ def optimize(request: OptimizeRequest):
     model = models[request.model]
     if set(request.bounds) != set(model.features):
         raise HTTPException(400, "Bounds must be supplied for every model feature.")
+    if any(len(request.bounds[feature]) != 2 for feature in model.features):
+        raise HTTPException(400, "Each optimization bound must contain exactly [lower, upper].")
     lower = [request.bounds[feature][0] for feature in model.features]
     upper = [request.bounds[feature][1] for feature in model.features]
+    if any(
+        not math.isfinite(value)
+        for value in [*lower, *upper]
+    ):
+        raise HTTPException(400, "Optimization bounds must be finite numbers.")
     if any(low > high for low, high in zip(lower, upper)):
         raise HTTPException(400, "Optimization lower bounds must not exceed upper bounds.")
-    result = run_algorithm(
-        request.algorithm,
-        make_fitness(model, model.features, (lower, upper)),
-        (lower, upper),
-        request.population,
-        request.iterations,
-        42,
-    )
+    try:
+        objective = make_fitness(model, model.features, (lower, upper))
+        result = run_algorithm(
+            request.algorithm, objective, (lower, upper),
+            request.population, request.iterations, 42,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     serializable = {
         **result,
         "best_position": result["best_position"].tolist(),

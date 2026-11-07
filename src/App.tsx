@@ -1,7 +1,7 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-type Dataset = { rows: number; columns: string[]; inputColumns: string[]; targetColumns: string[]; warnings: string[]; preview: { rows: Record<string, unknown>[] } };
+type Dataset = { rows: number; columns: string[]; inputColumns: string[]; targetColumns: string[]; warnings: string[]; metadata?: { s11_points?: number; frequency_labels_verified?: boolean }; preview: { rows: Record<string, unknown>[] } };
 type Evaluation = { model: string; r2: number; rmse: number; mae: number };
 type Optimization = { algorithm: string; best_fitness: number; best_position: number[]; history: number[]; elapsed_seconds: number };
 type AppState = { dataset: Dataset | null; models: string[]; evaluation: Evaluation[] | null; optimizations: Record<string, Optimization> };
@@ -55,8 +55,9 @@ function Empty({ children }: { children: string }) { return <div className="empt
 function Dashboard({ state }: PageProps) {
   if (!state.dataset) return <><Hero /><Empty>Ready for your antenna dataset</Empty></>;
   const best = state.evaluation?.[0];
-  return <><Hero /><div className="metric-grid"><Metric label="Samples" value={state.dataset.rows.toLocaleString()} /><Metric label="Input parameters" value={state.dataset.inputColumns.length} /><Metric label="Output parameters" value={state.dataset.targetColumns.length} /><Metric label="Trained models" value={state.models.length} /></div>
+  return <><Hero /><div className="metric-grid"><Metric label="Samples" value={state.dataset.rows.toLocaleString()} /><Metric label="Input parameters" value={state.dataset.inputColumns.length} /><Metric label="S11 points" value={state.dataset.metadata?.s11_points ?? state.dataset.targetColumns.length} /><Metric label="Trained models" value={state.models.length} /></div>
     <section className="card"><SectionTitle title="Validation overview" detail={best ? `Best model: ${best.model}` : "Train models to populate actual metrics"} />
+      {state.dataset.metadata?.frequency_labels_verified === false && <div className="alert warning">Frequency labels are not present in the imported files; resonant frequency and bandwidth remain unavailable until frequency metadata is supplied.</div>}
       {state.evaluation ? <><div className="table-wrap"><EvaluationTable rows={state.evaluation} /></div><MetricChart rows={state.evaluation} /></> : <EmptyState text="No model evaluation available yet." />}</section></>;
 }
 function Hero() { return <section className="hero"><div><span className="eyebrow accent">MICROSTRIP PATCH ANTENNA</span><h2>Design with evidence.<br /><em>Optimize with confidence.</em></h2><p>Load measured data, train performance models, and explore bounded optimization experiments.</p></div><div className="hero-wave">∿<br />∿<br />∿</div></section>; }

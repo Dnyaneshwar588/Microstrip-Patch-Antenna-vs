@@ -32,10 +32,14 @@ def prepare_data(
     if missing:
         raise ValueError(f"Unknown columns: {', '.join(sorted(missing))}")
     selected = frame[features + targets].copy()
+    if len(set(features)) != len(features) or len(set(targets)) != len(targets):
+        raise ValueError("Features and targets must not contain duplicate columns.")
+    if set(features) & set(targets):
+        raise ValueError("A column cannot be selected as both a feature and a target.")
     selected = selected.apply(pd.to_numeric, errors="coerce")
     valid = selected.dropna(subset=targets)
-    if len(valid) < 3:
-        raise ValueError("At least three rows with valid target values are required.")
+    if len(valid) < 5:
+        raise ValueError("At least five rows with valid target values are required.")
     X, y = valid[features], valid[targets]
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=random_state
@@ -52,5 +56,7 @@ def prepare_data(
         "missing_values": int(selected.isna().sum().sum()),
         "duplicate_rows": int(selected.duplicated().sum()),
         "outliers": int(((X - X.median()).abs() > 3 * X.std()).sum().sum()),
+        "train_rows": len(X_train),
+        "test_rows": len(X_test),
     }
     return PreparedData(X_train, X_test, y_train, y_test, transformer, report)

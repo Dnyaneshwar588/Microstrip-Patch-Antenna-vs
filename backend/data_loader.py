@@ -15,6 +15,7 @@ class DatasetBundle:
     target_columns: list[str]
     frequency_columns: list[str]
     warnings: list[str]
+    metadata: dict[str, object]
 
 
 def _read(source: str | Path | BinaryIO) -> pd.DataFrame:
@@ -40,13 +41,31 @@ def load_dataset(
     """Load a single table or align input/complex S11 files by row index."""
     warnings: list[str] = []
     input_frame = _read(inputs).reset_index(drop=True)
+    if input_frame.empty:
+        raise ValueError("The input dataset is empty.")
+    if input_frame.columns.duplicated().any():
+        raise ValueError("The input dataset contains duplicate column names.")
     if s11_real is None and s11_imag is None:
         numeric = _numeric_columns(input_frame)
-        return DatasetBundle(input_frame, numeric, [], _frequency_columns(numeric), warnings)
+        numeric_frame = input_frame[numeric]
+        metadata = _metadata(input_frame, numeric_frame, warnings)
+        targets = [column for column in numeric if "s11" in str(column).lower()]
+        features = [column for column in numeric if column not in targets]
+        metadata["s11_points"] = len(targets)
+        return DatasetBundle(
+            input_frame,
+            features or numeric,
+            targets,
+            _frequency_columns(targets),
+            warnings,
+            metadata,
+        )
     if s11_real is None or s11_imag is None:
         raise ValueError("Both S11 real and S11 imaginary files are required.")
     real = _read(s11_real).reset_index(drop=True)
     imag = _read(s11_imag).reset_index(drop=True)
+    if real.empty or imag.empty:
+        raise ValueError("S11 component files must not be empty.")
     if len(real) != len(imag) or len(input_frame) != len(real):
         raise ValueError(
             f"Cannot align files by antenna sample: inputs={len(input_frame)}, "
@@ -74,7 +93,34 @@ def load_dataset(
             "cannot be derived until frequency metadata is provided."
         )
     result = pd.concat([input_frame, pd.DataFrame(output_columns)], axis=1)
-    return DatasetBundle(result, _numeric_columns(input_frame), targets, _frequency_columns(real_num), warnings)
+    metadata = _metadata(result, _numeric_columns(result), warnings)
+    metadata.update({
+        "input_rows": len(input_frame),
+        "s11_points": count,
+        "frequency_labels_verified": bool(_frequency_columns(real_num)),
+    })
+    return DatasetBundle(result, _numeric_columns(input_frame), targets, _frequency_columns(real_num), warnings, metadata)
+
+
+def _metadata(frame: pd.DataFrame, numeric_columns: list[str], warnings: list[str]) -> dict[str, object]:
+    numeric = frame[numeric_columns].apply(pd.to_numeric, errors="coerce")
+    missing = int(frame.isna().sum().sum())
+    duplicates = int(frame.duplicated().sum())
+    if missing:
+        warnings.append(f"Dataset contains {missing} missing values.")
+    return {
+        "rows": len(frame),
+        "columns": len(frame.columns),
+        "numeric_columns": len(numeric_columns),
+        "missing_values": missing,
+        "duplicate_rows": duplicates,
+        "non_numeric_columns": [str(c) for c in frame.columns if c not in numeric_columns],
+        "numeric_ranges": {
+            str(column): {"min": float(numeric[column].min()), "max": float(numeric[column].max())}
+            for column in numeric_columns
+            if numeric[column].notna().any()
+        },
+    }
 
 
 def calculate_s11_db(real: pd.Series | np.ndarray, imag: pd.Series | np.ndarray) -> np.ndarray:

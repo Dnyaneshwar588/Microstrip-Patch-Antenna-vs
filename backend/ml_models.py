@@ -43,7 +43,11 @@ class ReducedOutputRegressor(BaseEstimator, RegressorMixin):
 
     def fit(self, X, y):
         self.output_count_ = y.shape[1] if hasattr(y, "shape") and len(y.shape) > 1 else 1
-        self.pca_ = PCA(n_components=min(self.n_components, self.output_count_), random_state=42)
+        sample_count = y.shape[0]
+        self.pca_ = PCA(
+            n_components=min(self.n_components, self.output_count_, sample_count),
+            random_state=42,
+        )
         transformed = self.pca_.fit_transform(y)
         self.estimator_ = clone(self.estimator)
         self.estimator_.fit(X, transformed)
