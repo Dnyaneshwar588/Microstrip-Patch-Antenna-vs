@@ -7,4 +7,15 @@ export default defineConfig({
     port: 5173,
     proxy: { "/api": "http://127.0.0.1:8000" },
   },
+  build: {
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          recharts: ["recharts"],
+          react: ["react", "react-dom"],
+        },
+      },
+    },
+  },
 });
